@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <title>Visor de Canales 2025</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+
+  <style>
+    html, body, #map {
+      height: 100%; margin: 0; padding: 0;
+    }
+    /* Cartela institucional */
+    .info-card {
+      position: absolute;
+      top: 10px;
+      right: 10px;    /* la otra esquina */
+      z-index: 1000;
+      background: rgba(255,255,255,0.95);
+      padding: 12px;  /* más grande */
+      width: 240px;   /* más ancha */
+      border-radius: 6px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.3);
+      font-family: sans-serif;
+      font-size: 16px;   /* texto más grande */
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Cartela en la esquina superior derecha -->
+  <div class="info-card">
+    <strong>Administración Provincial del Agua</strong><br>
+    Dirección de Usos Productivos del Agua<br>
+    <em>Red de Canales de la Provincia del Chaco</em>
+  </div>
+
+  <div id="map"></div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    console.log('Arrancó script');
+
+    // 1. Inicializar mapa
+    const map = L.map('map').setView([-27.45, -58.99], 8);
+
+    // 2. Capa base OSM
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19
+    }).addTo(map);
+
+    // 3. Función de estilo: distintos colores según tipo
+    function estiloCanal(feature) {
+      // Cambia 'clase' por el nombre real de tu propiedad:
+      const tipo = feature.properties.clase
+                || feature.properties.tipo
+                || feature.properties.category
+                || '';
+      let color;
+      if (tipo === 'Troncal') {
+        color = '#000080';      // azul marino
+      } else if (tipo === 'Principal' || tipo === 'Secundario') {
+        color = '#00bfff';      // azul celeste
+      } else {
+        // si hay otros tipos, también celeste
+        color = '#00bfff';
+      }
+      return {
+        color,
+        weight: 2,
+        opacity: 0.8
+      };
+    }
+
+    // 4. Cargar GeoJSON y aplicar estilo
+    fetch('./red_canales_total.geojson')
+      .then(res => {
+        console.log('Status GeoJSON:', res.status);
+        return res.json();
+      })
+      .then(data => {
+        L.geoJSON(data, {
+          style: estiloCanal,
+          onEachFeature: (feature, layer) => {
+            const props = feature.properties;
+            const contenido = Object
+              .entries(props)
+              .map(([k,v]) => `<b>${k}:</b> ${v}`)
+              .join('<br>');
+            layer.bindPopup(contenido);
+          }
+        }).addTo(map);
+      })
+      .catch(err => console.error('Error cargando GeoJSON:', err));
+  </script>
+</body>
+</html>
