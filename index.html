@@ -4,6 +4,7 @@
   <meta charset="utf-8"/>
   <title>Visor de Canales 2025</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <!-- Leaflet CSS -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -20,10 +21,9 @@
       background:white; border:none; padding:6px; border-radius:4px;
       box-shadow:0 0 5px rgba(0,0,0,0.3); cursor:pointer;
     }
-    /* Control de Capas Unificado */
     .leaflet-control-layers {
-      background: rgba(255,255,255,0.95);
-      box-shadow: 0 0 5px rgba(0,0,0,0.3);
+      background:rgba(255,255,255,0.95);
+      box-shadow:0 0 5px rgba(0,0,0,0.3);
       font:14px sans-serif; max-width:200px;
     }
     .leaflet-control-layers label {
@@ -43,79 +43,96 @@
     <em>Red de Canales de la Provincia del Chaco</em>
   </div>
 
+  <!-- Div donde irá el mapa -->
   <div id="map"></div>
 
+  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    // 1. Inicializar mapa
+    // 1. Crear mapa
     const map = L.map('map').setView([-27.45, -58.99], 8);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution:'&copy; OpenStreetMap contributors', maxZoom:19
     }).addTo(map);
 
-    // 2. Botón “Centrar vista”
-    const CenterControl = L.Control.extend({
+    // 2. Botón para centrar en toda la red
+    const Center = L.Control.extend({
       onAdd: () => {
-        const btn = L.DomUtil.create('button','center-button');
-        btn.title='Centrar en la red'; btn.innerHTML='🔄';
-        L.DomEvent.on(btn,'click',()=>{
-          const fg=L.featureGroup([troncalLayer,principalLayer,secundarioLayer]);
+        const b = L.DomUtil.create('button','center-button');
+        b.title = 'Centrar en la red'; b.innerHTML = '🔄';
+        L.DomEvent.on(b,'click',()=>{
+          const fg = L.featureGroup([troncal,principal,secundario]);
           map.fitBounds(fg.getBounds(),{padding:[20,20]});
         });
-        return btn;
+        return b;
       }
     });
-    map.addControl(new CenterControl({position:'topright'}));
+    map.addControl(new Center({ position:'topright' }));
 
-    // 3. Estilos y hover/popup
-    function estiloBase(cat){
-      if(cat==='TRONCAL')    return {color:'#000080',weight:4,opacity:0.8};
-      if(cat==='PRINCIPAL')  return {color:'#00bfff',weight:3,opacity:0.8};
-      if(cat==='SECUNDARIO') return {color:'#A52A2A',weight:2,opacity:0.8};
-      return {color:'#888888',weight:2,opacity:0.6};
+    // 3. Función de estilo
+    function styleBy(cat){
+      switch(cat){
+        case 'TRONCAL':    return {color:'#000080',weight:4,opacity:0.8};
+        case 'PRINCIPAL':  return {color:'#00bfff',weight:3,opacity:0.8};
+        case 'SECUNDARIO': return {color:'#A52A2A',weight:2,opacity:0.8};
+        default:           return {color:'#888',weight:2,opacity:0.6};
+      }
     }
-    function onEach(f,l){
-      const p=f.properties, keys=['NOMBRE','LONGITUD','ESTADO'];
-      const pri=keys.filter(k=>p[k]!=null).map(k=>`<b>${k}:</b> ${p[k]}`);
-      const resto=Object.keys(p).filter(k=>!keys.includes(k))
-                 .map(k=>`<b>${k}:</b> ${p[k]}`);
-      l.bindPopup(pri.concat(['<hr>']).concat(resto).join('<br>'));
-      l.on('mouseover',()=>{
-        const s=estiloBase((p.CATEGORIA||'').toUpperCase());
-        l.setStyle({color:s.color,weight:s.weight+2,opacity:1});
-        l.bringToFront();
+
+    // 4. onEach sólo con los 4 campos deseados
+    function onEach(feature, layer){
+      const p = feature.properties;
+      const display = ['Name','CUENCA','CATEGORIA','LONG (km)']
+        .filter(key => p[key] != null && p[key] !== '')
+        .map(key => `<b>${key}:</b> ${p[key]}`)
+        .join('<br>');
+      layer.bindPopup(display);
+
+      // Hover highlight
+      const cat = (p.CATEGORIA||'').toUpperCase();
+      layer.on('mouseover', ()=>{
+        const s = styleBy(cat);
+        layer.setStyle({color:s.color,weight:s.weight+2,opacity:1});
+        layer.bringToFront();
       });
-      l.on('mouseout',()=>l.setStyle(estiloBase((p.CATEGORIA||'').toUpperCase())));
+      layer.on('mouseout', ()=> {
+        layer.setStyle(styleBy(cat));
+      });
     }
 
-    // 4. Cargar GeoJSON y crear capas
-    let troncalLayer, principalLayer, secundarioLayer;
-    fetch('./red_canales_total.geojson').then(r=>r.json()).then(data=>{
-      troncalLayer = L.geoJSON(data,{
-        filter:f=>(f.properties.CATEGORIA||'').toUpperCase()==='TRONCAL',
-        style:()=>estiloBase('TRONCAL'), onEachFeature:onEach
-      }).addTo(map);
+    // 5. Cargamos el GeoJSON y separamos capas
+    let troncal, principal, secundario;
+    fetch('./red_canales_total.geojson')
+      .then(r=>r.json())
+      .then(data=>{
+        troncal = L.geoJSON(data, {
+          filter: f => f.properties.CATEGORIA?.toUpperCase()==='TRONCAL',
+          style: f => styleBy('TRONCAL'),
+          onEachFeature: onEach
+        }).addTo(map);
+        principal = L.geoJSON(data, {
+          filter: f => f.properties.CATEGORIA?.toUpperCase()==='PRINCIPAL',
+          style: f => styleBy('PRINCIPAL'),
+          onEachFeature: onEach
+        }).addTo(map);
+        secundario = L.geoJSON(data, {
+          filter: f => f.properties.CATEGORIA?.toUpperCase()==='SECUNDARIO',
+          style: f => styleBy('SECUNDARIO'),
+          onEachFeature: onEach
+        }).addTo(map);
 
-      principalLayer = L.geoJSON(data,{
-        filter:f=>(f.properties.CATEGORIA||'').toUpperCase()==='PRINCIPAL',
-        style:()=>estiloBase('PRINCIPAL'), onEachFeature:onEach
-      }).addTo(map);
-
-      secundarioLayer = L.geoJSON(data,{
-        filter:f=>(f.properties.CATEGORIA||'').toUpperCase()==='SECUNDARIO',
-        style:()=>estiloBase('SECUNDARIO'), onEachFeature:onEach
-      }).addTo(map);
-
-      // 5. Control de Capas + Leyenda, POSICIÓN bottomright
-      L.control.layers(null, {
-        '<span><i style="background:#000080"></i> Troncal</span>': troncalLayer,
-        '<span><i style="background:#00bfff"></i> Principal</span>': principalLayer,
-        '<span><i style="background:#A52A2A"></i> Secundario</span>': secundarioLayer
-      }, {
-        collapsed: false,
-        position: 'bottomright'
-      }).addTo(map);
-    }).catch(e=>console.error(e));
+        // 6. Control de capas + swatches de color
+        L.control.layers(null, {
+          '<span><i style="background:#000080"></i> Troncal</span>': troncal,
+          '<span><i style="background:#00bfff"></i> Principal</span>': principal,
+          '<span><i style="background:#A52A2A"></i> Secundario</span>': secundario
+        }, {
+          collapsed:false,
+          position:'bottomright'
+        }).addTo(map);
+      })
+      .catch(e=>console.error(e));
   </script>
 </body>
 </html>
+
