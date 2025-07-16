@@ -12,35 +12,38 @@
   />
 
   <style>
-    html, body, #map {
-      height: 100%; margin: 0; padding: 0;
-    }
-    /* Cartela institucional */
+    html, body, #map { height:100%; margin:0; padding:0 }
     .info-card {
-      position: absolute;
-      top: 10px;
-      right: 10px;    /* la otra esquina */
-      z-index: 1000;
-      background: rgba(255,255,255,0.95);
-      padding: 12px;  /* más grande */
-      width: 240px;   /* más ancha */
-      border-radius: 6px;
-      box-shadow: 0 0 8px rgba(0,0,0,0.3);
-      font-family: sans-serif;
-      font-size: 16px;   /* texto más grande */
-      line-height: 1.4;
+      position:absolute; top:10px; right:10px; z-index:1000;
+      background:rgba(255,255,255,0.95); padding:12px 16px;
+      width:260px; border-radius:6px; box-shadow:0 0 8px rgba(0,0,0,0.3);
+      font:16px sans-serif; line-height:1.4;
+    }
+    .legend {
+      position:absolute; bottom:20px; right:10px; z-index:1000;
+      background:white; padding:8px; border-radius:4px;
+      box-shadow:0 0 5px rgba(0,0,0,0.3);
+      font:14px sans-serif; line-height:1.4;
+    }
+    .legend i {
+      display:inline-block; width:18px; height:3px; margin-right:6px;
+    }
+    .center-button {
+      background:white; border:none; padding:6px; border-radius:4px;
+      box-shadow:0 0 5px rgba(0,0,0,0.3); cursor:pointer;
     }
   </style>
 </head>
 <body>
 
-  <!-- Cartela en la esquina superior derecha -->
+  <!-- Cartela institucional -->
   <div class="info-card">
     <strong>Administración Provincial del Agua</strong><br>
     Dirección de Usos Productivos del Agua<br>
     <em>Red de Canales de la Provincia del Chaco</em>
   </div>
 
+  <!-- Contenedor del mapa -->
   <div id="map"></div>
 
   <!-- Leaflet JS -->
@@ -58,49 +61,100 @@
       maxZoom: 19
     }).addTo(map);
 
-    // 3. Función de estilo: distintos colores según tipo
-    function estiloCanal(feature) {
-      // Cambia 'clase' por el nombre real de tu propiedad:
-      const tipo = feature.properties.clase
-                || feature.properties.tipo
-                || feature.properties.category
-                || '';
-      let color;
-      if (tipo === 'Troncal') {
-        color = '#000080';      // azul marino
-      } else if (tipo === 'Principal' || tipo === 'Secundario') {
-        color = '#00bfff';      // azul celeste
-      } else {
-        // si hay otros tipos, también celeste
-        color = '#00bfff';
+    // 3. Botón “Centrar vista”
+    const CenterControl = L.Control.extend({
+      onAdd: () => {
+        const btn = L.DomUtil.create('button', 'center-button');
+        btn.title = 'Centrar en la red';
+        btn.innerHTML = '🔄';
+        L.DomEvent.on(btn, 'click', () => {
+          const fg = L.featureGroup([troncalLayer, principalLayer, secundarioLayer]);
+          map.fitBounds(fg.getBounds(), { padding: [20,20] });
+        });
+        return btn;
       }
-      return {
-        color,
-        weight: 2,
-        opacity: 0.8
-      };
+    });
+    map.addControl(new CenterControl({ position: 'topright' }));
+
+    // 4. Funciones de estilo y eventos hover/popup
+    function estiloBase(cat) {
+      if (cat==='TRONCAL')    return { color:'#000080', weight:4, opacity:0.8 };
+      if (cat==='PRINCIPAL')  return { color:'#00bfff', weight:3, opacity:0.8 };
+      if (cat==='SECUNDARIO') return { color:'#A52A2A', weight:2, opacity:0.8 };
+      return { color:'#888888', weight:2, opacity:0.6 };
     }
 
-    // 4. Cargar GeoJSON y aplicar estilo
+    function onEach(feature, layer) {
+      // Pop‑up con campos clave al principio
+      const props = feature.properties;
+      const primarios = ['NOMBRE','LONGITUD','ESTADO'];
+      const pri = primarios.filter(k=>props[k]!=null).map(k=>`<b>${k}:</b> ${props[k]}`);
+      const resto = Object.keys(props)
+        .filter(k=>!primarios.includes(k))
+        .map(k=>`<b>${k}:</b> ${props[k]}`);
+      layer.bindPopup(pri.concat(['<hr>']).concat(resto).join('<br>'));
+
+      // Hover: resalta
+      layer.on('mouseover', () => {
+        const s = estiloBase((props.CATEGORIA||'').toUpperCase());
+        layer.setStyle({ color: s.color, weight: s.weight+2, opacity:1 });
+        layer.bringToFront();
+      });
+      layer.on('mouseout', () => {
+        const s = estiloBase((props.CATEGORIA||'').toUpperCase());
+        layer.setStyle(s);
+      });
+    }
+
+    // 5. Variables para cada capa
+    let troncalLayer, principalLayer, secundarioLayer;
+
+    // 6. Cargar GeoJSON y crear capas filtradas
     fetch('./red_canales_total.geojson')
-      .then(res => {
-        console.log('Status GeoJSON:', res.status);
-        return res.json();
-      })
-      .then(data => {
-        L.geoJSON(data, {
-          style: estiloCanal,
-          onEachFeature: (feature, layer) => {
-            const props = feature.properties;
-            const contenido = Object
-              .entries(props)
-              .map(([k,v]) => `<b>${k}:</b> ${v}`)
-              .join('<br>');
-            layer.bindPopup(contenido);
-          }
+      .then(r=>r.json())
+      .then(data=>{
+        troncalLayer = L.geoJSON(data, {
+          filter: f => (f.properties.CATEGORIA||'').toUpperCase()==='TRONCAL',
+          style: f=>estiloBase('TRONCAL'),
+          onEachFeature: onEach
         }).addTo(map);
+
+        principalLayer = L.geoJSON(data, {
+          filter: f => (f.properties.CATEGORIA||'').toUpperCase()==='PRINCIPAL',
+          style: f=>estiloBase('PRINCIPAL'),
+          onEachFeature: onEach
+        });
+
+        secundarioLayer = L.geoJSON(data, {
+          filter: f => (f.properties.CATEGORIA||'').toUpperCase()==='SECUNDARIO',
+          style: f=>estiloBase('SECUNDARIO'),
+          onEachFeature: onEach
+        });
+
+        // 7. Control de capas en TOLEFT (superior izquierda)
+        L.control.layers(null, {
+          'Troncal': troncalLayer,
+          'Principal': principalLayer,
+          'Secundario': secundarioLayer
+        }, {
+          collapsed: false,
+          position: 'topleft'
+        }).addTo(map);
+
+        // 8. Leyenda en inferior derecha
+        const legend = L.control({ position: 'bottomright' });
+        legend.onAdd = () => {
+          const div = L.DomUtil.create('div','legend');
+          div.innerHTML =
+            '<i style="background:#000080;"></i> Troncal<br>' +
+            '<i style="background:#00bfff;"></i> Principal<br>' +
+            '<i style="background:#A52A2A;"></i> Secundario';
+          return div;
+        };
+        legend.addTo(map);
       })
-      .catch(err => console.error('Error cargando GeoJSON:', err));
+      .catch(err=>console.error('Error cargando GeoJSON:', err));
   </script>
 </body>
 </html>
+
